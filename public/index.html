@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.bootcdn.net/ajax/libs/countup.js/2.0.7/countUp.umd.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/react/17.0.1/umd/react.production.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/react-dom/17.0.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/babel-standalone/7.0.0-beta.3/babel.min.js"></script>
+  <title>粉丝数量统计</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+    }
+    body {
+      background-image: url('imgs/body.jpg');
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center center;
+    }
+    .card-wrap {
+      box-sizing: border-box;
+      padding: 0 20px;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      display: flex;
+      flex-direction: column;
+      transform: translate(-50%, -50%);
+      width: 325px;
+      height: 260px;
+      background-color: rgb(255, 255, 255);
+      border-radius: 26px;
+      box-shadow: 0px 0px 10px 10px rgb(0, 0, 0, 0.26);
+    }
+    .card-wrap_title {
+      height: 70px;
+      line-height: 70px;
+      text-align: center;
+      font-weight: bolder;
+      font-size: 36px;
+      color: #9a833e;
+    }
+    .card_wrap_content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .card_wrap_content * {
+      text-align: center;
+    }
+    .follower_count {
+      font-size: 26px;
+      color: #7b7973;
+    }
+    .info_wrap {
+      color: #463f35;
+      line-height: 26px;
+      font-size: 16px;
+    }
+    .mb_12 {
+      margin-bottom: 12px;
+    }
+    .text_red {
+      color: red;
+    }
+    .text_green {
+      color: green;
+    }
+    .fw_bolder {
+      font-weight: bolder;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="text/babel">
+    function getQueryStringArgs () {
+      const qs = location.search.length > 0
+        ? location.search.substring(1)
+        : ''
+      const args = {}
+      for (const item of qs.split('&').map(ky => ky.split('='))) {
+        const name = decodeURIComponent(item[0]),
+              value = decodeURIComponent(item[1])
+        if (name.length) {
+          args[name] = value
+        }
+      }
+      return args
+    }
+    function formatTimeStamp (timestamp) {
+      return function _format (fmt = 'yyyy-MM-dd hh:mm:ss') {
+        const date = timestamp
+          ? new Date(timestamp)
+          : new Date()
+        const o = { 
+            "M+" : date.getMonth() + 1,                   //月份 
+            "d+" : date.getDate(),                        //日 
+            "h+" : date.getHours(),                       //小时 
+            "m+" : date.getMinutes(),                     //分 
+            "s+" : date.getSeconds(),                     //秒 
+            "q+" : Math.floor((date.getMonth() + 3) / 3), //季度 
+            "S"  : date.getMilliseconds()                 //毫秒 
+        }
+        if(/(y+)/.test(fmt)) {
+          fmt = fmt.replace(RegExp.$1, (date.getFullYear() + "").substr(4 - RegExp.$1.length))
+        }
+        for(let k in o) {
+          if(new RegExp("(" + k + ")").test(fmt)){
+            fmt = fmt.replace(RegExp.$1, (RegExp.$1.length === 1) ? (o[k]) : (("00" + o[k]).substr(("" + o[k]).length)))
+          }
+        }
+        return fmt
+      }
+    }
+    function getUpDownText (val) {
+      if (val === -1) return ''
+      if (val > 0) return `涨粉${val}`
+      if (val <= 0) return `掉粉${Math.abs(val)}`
+    }
+    const getCountUp = (function getCountUp () {
+      let instance, currentTargetEl
+      return function _getCountUp (targetEl, startNum) {
+        if (instance && currentTargetEl === targetEl) {
+          return instance
+        }
+        currentTargetEl = targetEl
+        const duration = Math.floor((DELAY - 500) / 1000)
+        instance = new countUp.CountUp(targetEl, startNum, {
+          duration: duration <= 0 ? 0.5 : duration
+        })
+        if (instance.error) {
+          console.error(instance.error)
+          instance = null
+        } else {
+          instance.start()
+        }
+      }
+    })()
+
+    const LEX_UID = '777536'
+
+    // 请求间隔
+    const DELAY = 3000
+    // uid key
+    const UID = 'uid'
+    // 获取uid
+    const uid = getQueryStringArgs()[UID] || LEX_UID
+    // 成功请求标志
+    const SUCCESS_CODE = 'success'
+    
+    function App () {
+      const [follower, changeFollower] = React.useState(-1)
+      const [errorMsg, setErrorMsg] = React.useState('')
+      const [totalUpDownVal, setTotalUpDownVal] = React.useState(-1)
+      const [serverFetchedTime, setServerFetchedTime] = React.useState(-1)
+
+      // 是否正在请求、粉丝数元素、上一次请求的粉丝数
+      const fetching = React.useRef(false)
+      const followerEl = React.useRef(null)
+      const previousFollower = React.useRef(-1)
+
+      // 发送及处理请求
+      const getFollower = React.useCallback(() => {
+        if (fetching.current && !uid) return
+        fetching.current = true
+        fetch(`/count?uid=${uid}&timestamp=${+new Date()}`)
+          .then(response => response.json())
+          .then(({ code, follower, message, totalCount, firstTime } = {}) => {
+            if (code === SUCCESS_CODE) {
+              changeFollower(prev => {
+                previousFollower.current = prev
+                return follower
+              })
+              setTotalUpDownVal(totalCount)
+              setServerFetchedTime(firstTime)
+              setErrorMsg('')
+            } else {
+              changeFollower(-1)
+              setTotalUpDownVal(-1)
+              setServerFetchedTime(-1)
+              previousFollower.current = -1
+              setErrorMsg(message)
+            }
+          }, () => {})
+          .then(() => { fetching.current = false })
+      }, [])
+      
+      // 计算粉丝数
+      React.useEffect(() => {
+        if (followerEl.current && follower >= 0) {
+          const countUp = getCountUp(followerEl.current, follower)
+          countUp && countUp.update(follower)
+        }
+      }, [follower])
+
+      // 首次发送请求
+      React.useEffect(() => {
+        getFollower()
+      }, [])
+
+      // 自动发送请求
+      React.useEffect(() => {
+        if (DELAY !== null) {
+          let timeId = setInterval(getFollower, DELAY)
+          return () => clearInterval(timeId)
+        }
+      }, [DELAY, getFollower])
+
+      const upDownVal = previousFollower.current === -1
+        ? -1
+        : follower - previousFollower.current
+
+      return (
+        <div className='app_wrap card-wrap'>
+          <h2 className='card-wrap_title'>{uid === LEX_UID ? '蕾某' : ''}粉丝数量</h2>
+          <div className='card_wrap_content'>
+            { follower >= 0 && <p className='follower_count mb_12' ref={followerEl}></p> }
+            {
+              upDownVal !== -1 &&
+              <div className='info_wrap mb_12'>
+                <p>较上一次获取数据比较</p>
+                <p style={{ transition: 'color 1.5s' }} className={`${upDownVal > 0 ? 'text_green' : 'text_red'} fw_bolder`}>{getUpDownText(upDownVal)}</p>
+              </div>
+            }
+            {
+              totalUpDownVal !== -1 && uid === LEX_UID &&
+              <div className='info_wrap mb_12'>
+                <p>自 {formatTimeStamp(serverFetchedTime)()} 获取数据比较</p>
+                <p style={{ transition: 'color 1.5s' }} className={`${totalUpDownVal > 0 ? 'text_green' : 'text_red'} fw_bolder`}>总共{getUpDownText(totalUpDownVal)}</p>
+              </div>
+            }
+            { errorMsg && <div style={{ color: '#ff2222', fontWeight: 'bolder', wordBreak: 'break-all' }}>{errorMsg}</div> }
+          </div>
+        </div>
+      )
+    }
+    ReactDOM.render(<App/>, document.getElementById('app'))
+  </script>
+</body>
+</html>
